@@ -1,0 +1,530 @@
+﻿===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Assertions\Assert.cs =====
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using MiniTestLib.Exceptions;
+
+namespace MiniTestLib.Assertions
+{
+    public static class Assert
+    {
+        public static void AreEqual<T>(T expected, T actual, string message = "")
+        {
+            if (!Equals(expected, actual))
+                throw new AssertFailedException($"AreEqual failed. Expected: <{expected}> Actual: <{actual}>. {message}");
+        }
+
+        public static void AreNotEqual<T>(T notExpected, T actual, string message = "")
+        {
+            if (Equals(notExpected, actual))
+                throw new AssertFailedException($"AreNotEqual failed. NotExpected: <{notExpected}> Actual: <{actual}>. {message}");
+        }
+
+        public static void IsTrue(bool cond, string message = "")
+        {
+            if (!cond) throw new AssertFailedException($"IsTrue failed. {message}");
+        }
+
+        public static void IsFalse(bool cond, string message = "")
+        {
+            if (cond) throw new AssertFailedException($"IsFalse failed. {message}");
+        }
+
+        public static void IsNull(object obj, string message = "")
+        {
+            if (obj != null) throw new AssertFailedException($"IsNull failed. {message}");
+        }
+
+        public static void IsNotNull(object obj, string message = "")
+        {
+            if (obj == null) throw new AssertFailedException($"IsNotNull failed. {message}");
+        }
+
+        public static void IsInstanceOf<T>(object obj, string message = "")
+        {
+            if (obj is not T) throw new AssertFailedException($"IsInstanceOf failed. Expected: {typeof(T).Name}. {message}");
+        }
+
+        public static void IsEmpty<T>(IEnumerable<T> collection, string message = "")
+        {
+            if (collection.Any()) throw new AssertFailedException($"IsEmpty failed. {message}");
+        }
+
+        public static void Contains<T>(IEnumerable<T> collection, T item, string message = "")
+        {
+            if (!collection.Contains(item)) throw new AssertFailedException($"Contains failed. Item not found. {message}");
+        }
+
+        public static void Single<T>(ICollection<T> collection, string message = "")
+        {
+            if (collection.Count != 1) throw new AssertFailedException($"Single failed. Count = {collection.Count}. {message}");
+        }
+
+        public static TException Throws<TException>(Action action, string message = "") where TException : Exception
+        {
+            try
+            {
+                action();
+            }
+            catch (TException ex) { return ex; }
+            catch (Exception ex) { throw new AssertFailedException($"Throws failed. Expected {typeof(TException).Name} but got {ex.GetType().Name}. {message}"); }
+            throw new AssertFailedException($"Throws failed. Expected {typeof(TException).Name} but no exception thrown. {message}");
+        }
+
+        public static async Task<TException> ThrowsAsync<TException>(Func<Task> action, string message = "") where TException : Exception
+        {
+            try
+            {
+                await action();
+            }
+            catch (TException ex) { return ex; }
+            catch (Exception ex) { throw new AssertFailedException($"ThrowsAsync failed. Expected {typeof(TException).Name} but got {ex.GetType().Name}. {message}"); }
+            throw new AssertFailedException($"ThrowsAsync failed. Expected {typeof(TException).Name} but no exception thrown. {message}");
+        }
+    }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Attributes\AfterAttribute.cs =====
+using System;
+
+namespace MiniTestLib.Attributes
+{
+    [AttributeUsage(AttributeTargets.Method)]
+    public class AfterAttribute : Attribute { }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Attributes\BeforeAttribute.cs =====
+using System;
+
+namespace MiniTestLib.Attributes
+{
+    [AttributeUsage(AttributeTargets.Method)]
+    public class BeforeAttribute : Attribute { }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Attributes\DataAttribute.cs =====
+using System;
+
+namespace MiniTestLib.Attributes
+{
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    public class DataAttribute : Attribute
+    {
+        public object[] Values { get; }
+        public DataAttribute(params object[] values) => Values = values;
+    }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Attributes\TestAttribute.cs =====
+using System;
+
+namespace MiniTestLib.Attributes
+{
+    [AttributeUsage(AttributeTargets.Method)]
+    public class TestAttribute : Attribute
+    {
+        public string Description { get; }
+        public TestAttribute(string description = "") => Description = description;
+    }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Attributes\TestSuiteAttribute.cs =====
+using System;
+
+namespace MiniTestLib.Attributes
+{
+    [AttributeUsage(AttributeTargets.Class)]
+    public class TestSuiteAttribute : Attribute { }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Class1.cs =====
+namespace MiniTestLib;
+
+public class Class1
+{
+
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\Exceptions\AssertFailedException.cs =====
+using System;
+
+namespace MiniTestLib.Exceptions
+{
+    public class AssertFailedException : Exception
+    {
+        public AssertFailedException(string message) : base(message) { }
+    }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp.Tests\BankAccountTests.cs =====
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using MiniTestLib.Attributes;
+using MiniTestLib.Assertions;
+using SampleApp;
+
+namespace SampleApp.Tests
+{
+    [TestSuite]
+    public class BankAccountTests
+    {
+        private BankAccount _a;
+        private BankAccount _b;
+
+        [Before]
+        public void Setup()
+        {
+            _a = new BankAccount("Alice", 100m);
+            _b = new BankAccount("Bob", 50m);
+        }
+
+        [After]
+        public void Teardown()
+        {
+            // РґРµРјРѕРЅСЃС‚СЂР°С†РёСЏ РѕС‡РёСЃС‚РєРё РєРѕРЅС‚РµРєСЃС‚Р° (РјРѕР¶РЅРѕ РѕСЃС‚Р°РІРёС‚СЊ РїСѓСЃС‚С‹Рј)
+            _a = null;
+            _b = null;
+        }
+
+        [Test("Deposit increases balance")]
+        [Data(50, 150)]
+        [Data(0.01, 100.01)]
+        public void Deposit_Works(decimal deposit, decimal expected)
+        {
+            _a.Deposit(deposit);
+            Assert.AreEqual(expected, _a.Balance);
+        }
+
+        [Test("Withdraw reduces balance")]
+        public void Withdraw_Works()
+        {
+            _a.Withdraw(30m);
+            Assert.AreEqual(70m, _a.Balance);
+        }
+
+        [Test("Withdraw more than balance throws")]
+        public void Withdraw_TooMuch_Throws()
+        {
+            Assert.Throws<InvalidOperationException>(() => _a.Withdraw(1000m));
+        }
+
+        [Test("Transfer moves money")]
+        public void Transfer_Works()
+        {
+            _a.TransferTo(_b, 20m);
+            Assert.AreEqual(80m, _a.Balance);
+            Assert.AreEqual(70m, _b.Balance);
+        }
+
+        [Test("Constructor validation")]
+        public void Constructor_Validates()
+        {
+            Assert.Throws<ArgumentException>(() => new BankAccount("", 10m));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new BankAccount("X", -1m));
+        }
+
+        [Test("Async interest accrual")]
+        public async Task AccrueInterestAsync_Works()
+        {
+            await _a.AccrueInterestAsync(10m, 10);
+            Assert.IsTrue(_a.Balance > 100m);
+        }
+
+        [Test("IsInstance and null checks")]
+        public void TypeAndNullChecks()
+        {
+            Assert.IsInstanceOf<BankAccount>(_a);
+            Assert.IsNotNull(_a);
+            List<int> empty = new List<int>();
+            Assert.IsEmpty(empty);
+        }
+
+        [Test("Collection single/not single")]
+        public void CollectionChecks()
+        {
+            var list = new List<int> { 1 };
+            Assert.Single(list);
+            var list2 = new List<int> { 1, 2 };
+            Assert.AreNotEqual(1, list2.Count); // РґРµРјРѕРЅСЃС‚СЂР°С†РёСЏ AreNotEqual
+        }
+
+        [Test("ThrowsAsync demonstration")]
+        public async Task ThrowsAsync_Demo()
+        {
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            {
+                var acc = new BankAccount("Z", 0);
+                await acc.AccrueInterestAsync(-1m, 1);
+            });
+        }
+    }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp.Tests\Class1.cs =====
+namespace SampleApp.Tests;
+
+public class Class1
+{
+
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\BankAccount.cs =====
+using System;
+using System.Threading.Tasks;
+
+namespace SampleApp
+{
+    public class BankAccount
+    {
+        public string Owner { get; }
+        public decimal Balance { get; private set; }
+
+        public BankAccount(string owner, decimal initial)
+        {
+            if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("Owner required");
+            if (initial < 0) throw new ArgumentOutOfRangeException(nameof(initial));
+            Owner = owner;
+            Balance = initial;
+        }
+
+        public void Deposit(decimal amount)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+            Balance += amount;
+        }
+
+        public void Withdraw(decimal amount)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+            if (amount > Balance) throw new InvalidOperationException("Insufficient funds");
+            Balance -= amount;
+        }
+
+        public void TransferTo(BankAccount other, decimal amount)
+        {
+            if (other == null) throw new ArgumentNullException(nameof(other));
+            Withdraw(amount);
+            other.Deposit(amount);
+        }
+
+        public async Task AccrueInterestAsync(decimal annualRatePercent, int millisecondsDelay)
+        {
+            if (annualRatePercent < 0) throw new ArgumentOutOfRangeException(nameof(annualRatePercent));
+            await Task.Delay(millisecondsDelay);
+            var interest = Balance * (annualRatePercent / 100m);
+            Balance += Math.Round(interest, 2);
+        }
+    }
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\Class1.cs =====
+namespace SampleApp;
+
+public class Class1
+{
+
+}
+
+===== C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\TestExecutor\Program.cs =====
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using System.Globalization;
+using MiniTestLib.Attributes;
+
+namespace TestExecutor
+{
+    class Program
+    {
+        static async Task<int> Main(string[] args)
+        {
+            Console.WriteLine("Mini test runner start");
+
+            if (args.Length == 0)
+            {
+                Console.WriteLine("Usage: dotnet run --project TestExecutor -- <path-to-tests-dll>");
+                return 1;
+            }
+
+            var dllPath = args[0];
+            if (!File.Exists(dllPath))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"File not found: {dllPath}");
+                Console.ResetColor();
+                return 2;
+            }
+
+            var asm = Assembly.LoadFrom(dllPath);
+            var types = asm.GetTypes().Where(t => t.GetCustomAttribute(typeof(TestSuiteAttribute)) != null);
+
+            int total = 0, passed = 0, failed = 0;
+
+            foreach (var t in types)
+            {
+                Console.WriteLine($"\nSuite: {t.FullName}");
+                var before = t.GetMethods().FirstOrDefault(m => m.GetCustomAttribute(typeof(BeforeAttribute)) != null);
+                var after = t.GetMethods().FirstOrDefault(m => m.GetCustomAttribute(typeof(AfterAttribute)) != null);
+                var tests = t.GetMethods().Where(m => m.GetCustomAttribute(typeof(TestAttribute)) != null);
+
+                foreach (var test in tests)
+                {
+                    var dataAttrs = test.GetCustomAttributes().Where(a => a.GetType() == typeof(DataAttribute)).Cast<DataAttribute>().ToArray();
+
+                    if (dataAttrs.Length == 0)
+                    {
+                        total++;
+                        var instance = Activator.CreateInstance(t);
+                        try
+                        {
+                            before?.Invoke(instance, null);
+
+                            var parameters = test.GetParameters();
+                            object[] argsToPass = ConvertArguments(parameters, null);
+                            var result = test.Invoke(instance, argsToPass);
+                            if (result is Task task) await task;
+
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"[PASS] {test.Name}");
+                            passed++;
+                        }
+                        catch (TargetInvocationException tie) when (tie.InnerException != null)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"[FAIL] {test.Name} -> {tie.InnerException.GetType().Name}: {tie.InnerException.Message}");
+                            failed++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"[FAIL] {test.Name} -> {ex.GetType().Name}: {ex.Message}");
+                            failed++;
+                        }
+                        finally
+                        {
+                            Console.ResetColor();
+                            try { after?.Invoke(instance, null); } catch { }
+                        }
+                    }
+                    else
+                    {
+                        // data-driven: each DataAttribute contains object[] Values
+                        foreach (var da in dataAttrs)
+                        {
+                            var rawValues = da.Values ?? Array.Empty<object>();
+                            total++;
+                            var instance = Activator.CreateInstance(t);
+                            try
+                            {
+                                before?.Invoke(instance, null);
+
+                                var parameters = test.GetParameters();
+                                object[] argsToPass = ConvertArguments(parameters, rawValues);
+                                var result = test.Invoke(instance, argsToPass);
+                                if (result is Task task) await task;
+
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine($"[PASS] {test.Name} (data: {string.Join(", ", rawValues)})");
+                                passed++;
+                            }
+                            catch (TargetInvocationException tie) when (tie.InnerException != null)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine($"[FAIL] {test.Name} (data: {string.Join(", ", rawValues)}) -> {tie.InnerException.GetType().Name}: {tie.InnerException.Message}");
+                                failed++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine($"[FAIL] {test.Name} (data: {string.Join(", ", rawValues)}) -> {ex.GetType().Name}: {ex.Message}");
+                                failed++;
+                            }
+                            finally
+                            {
+                                Console.ResetColor();
+                                try { after?.Invoke(instance, null); } catch { }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine("\nSummary:");
+            Console.WriteLine($"Total: {total}, Passed: {passed}, Failed: {failed}");
+            return failed == 0 ? 0 : 3;
+        }
+
+        // Приводим предоставленные значения к типам параметров метода
+        static object[] ConvertArguments(ParameterInfo[] paramInfos, object[] provided)
+        {
+            if (paramInfos == null || paramInfos.Length == 0) return Array.Empty<object>();
+            var result = new object[paramInfos.Length];
+
+            for (int i = 0; i < paramInfos.Length; i++)
+            {
+                var targetType = paramInfos[i].ParameterType;
+                if (provided == null || i >= provided.Length)
+                {
+                    result[i] = GetDefaultForParameter(targetType);
+                    continue;
+                }
+
+                var val = provided[i];
+                if (val == null)
+                {
+                    result[i] = null;
+                    continue;
+                }
+
+                var valType = val.GetType();
+                if (targetType.IsAssignableFrom(valType))
+                {
+                    result[i] = val;
+                    continue;
+                }
+
+                try
+                {
+                    var nonNullableTarget = Nullable.GetUnderlyingType(targetType) ?? targetType;
+                    // Special handling: if provided is a string that uses comma as decimal separator,
+                    // try invariant parse first, then fallback to current culture.
+                    if (val is string s)
+                    {
+                        result[i] = Convert.ChangeType(s, nonNullableTarget, CultureInfo.InvariantCulture);
+                    }
+                    else
+                    {
+                        result[i] = Convert.ChangeType(val, nonNullableTarget, CultureInfo.InvariantCulture);
+                    }
+                }
+                catch
+                {
+                    try
+                    {
+                        var nonNullableTarget = Nullable.GetUnderlyingType(targetType) ?? targetType;
+                        var s = val.ToString();
+                        result[i] = Convert.ChangeType(s, nonNullableTarget, CultureInfo.InvariantCulture);
+                    }
+                    catch
+                    {
+                        // если не удалось конвертировать — оставляем оригинал (Invoke выбросит понятную ошибку)
+                        result[i] = val;
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        static object GetDefaultForParameter(Type t)
+        {
+            if (!t.IsValueType) return null;
+            return Activator.CreateInstance(t);
+        }
+    }
+}
+
