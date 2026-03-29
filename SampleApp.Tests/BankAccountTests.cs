@@ -23,7 +23,6 @@ namespace SampleApp.Tests
         [After]
         public void Teardown()
         {
-            // очистки
             _a = null;
             _b = null;
         }
@@ -98,6 +97,50 @@ namespace SampleApp.Tests
                 var acc = new BankAccount("Z", 0);
                 await acc.AccrueInterestAsync(-1m, 1);
             });
+        }
+
+        [Test("Operation completes before timeout")]
+        [Timeout(500)]
+        public async Task Completes_Before_Timeout()
+        {
+            await _a.SlowOperationAsync(100);
+            Assert.IsTrue(true);
+        }
+
+        [Test("Operation exceeds timeout")]
+        [Timeout(100)]
+        public async Task Exceeds_Timeout()
+        {
+            await _a.SlowOperationAsync(500);
+            Assert.IsTrue(true);
+        }
+
+        [Test("Slow test 1")]
+        public async Task Slow_Test_1()
+        {
+            await _a.SlowOperationAsync(1000);
+            Assert.IsTrue(true);
+        }
+
+        [Test("Slow test 2")]
+        public async Task Slow_Test_2()
+        {
+            await _a.SlowOperationAsync(1000);
+            Assert.IsTrue(true);
+        }
+
+        [Test("Slow test 3")]
+        public async Task Slow_Test_3()
+        {
+            await _a.SlowOperationAsync(1000);
+            Assert.IsTrue(true);
+        }
+
+        [Test("Slow test 4")]
+        public async Task Slow_Test_4()
+        {
+            await _a.SlowOperationAsync(1000);
+            Assert.IsTrue(true);
         }
     }
 }

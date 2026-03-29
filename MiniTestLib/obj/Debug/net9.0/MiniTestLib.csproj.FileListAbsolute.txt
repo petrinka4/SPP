@@ -20,3 +20,4 @@ C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\obj\Debug
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\obj\Debug\net9.0\refint\MiniTestLib.dll
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\obj\Debug\net9.0\MiniTestLib.pdb
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\obj\Debug\net9.0\ref\MiniTestLib.dll
+C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\MiniTestLib\obj\Debug\net9.0\MiniTestLib.sourcelink.json

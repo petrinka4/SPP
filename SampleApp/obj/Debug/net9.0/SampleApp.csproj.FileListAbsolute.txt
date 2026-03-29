@@ -20,3 +20,4 @@ C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\obj\Debug\n
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\obj\Debug\net9.0\refint\SampleApp.dll
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\obj\Debug\net9.0\SampleApp.pdb
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\obj\Debug\net9.0\ref\SampleApp.dll
+C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\SampleApp\obj\Debug\net9.0\SampleApp.sourcelink.json

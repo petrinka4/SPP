@@ -43,5 +43,18 @@ namespace SampleApp
             var interest = Balance * (annualRatePercent / 100m);
             Balance += Math.Round(interest, 2);
         }
+        public async Task SlowOperationAsync(int millisecondsDelay)
+        {
+            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+            await Task.Delay(millisecondsDelay);
+        }
+
+        public async Task<decimal> SlowDepositAsync(decimal amount, int millisecondsDelay)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+            await Task.Delay(millisecondsDelay);
+            Balance += amount;
+            return Balance;
+        }
     }
 }

@@ -1,184 +1,130 @@
-﻿using System;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
-using System.Globalization;
+﻿using System.Reflection;
+using System.Diagnostics;
 using MiniTestLib.Attributes;
-// dotnet run --project .\TestExecutor -- .\SampleApp.Tests\bin\Debug\net9.0\SampleApp.Tests.dll
+using MiniTestLib.Exceptions;
+
 
 namespace TestExecutor
 {
-    class Program
+    internal class Program
     {
-        static async Task<int> Main(string[] args)
+        private class TestCase
         {
+            public Type SuiteType { get; set; } = null!;
+            public MethodInfo TestMethod { get; set; } = null!;
+            public MethodInfo? BeforeMethod { get; set; }
+            public MethodInfo? AfterMethod { get; set; }
+            public object[]? RawValues { get; set; }
+        }
+
+        private class TestRunResult
+        {
+            public string SuiteName { get; set; } = string.Empty;
+            public string TestName { get; set; } = string.Empty;
+            public string DataInfo { get; set; } = string.Empty;
+            public bool Passed { get; set; }
+            public string? ErrorType { get; set; }
+            public string? ErrorMessage { get; set; }
+        }
+
+        private static async Task Main(string[] args)
+        {
+            if (args.Length < 1)
+            {
+                Console.WriteLine("Usage: TestExecutor <tests-assembly-path> [maxDegree]");
+                return;
+            }
+
+            var assemblyPath = args[0];
+            int maxDegree = 1;
+            if (args.Length > 1 && int.TryParse(args[1], out var parsed) && parsed > 0)
+                maxDegree = parsed;
+
             Console.WriteLine("Mini test runner start");
+            Console.WriteLine();
 
-            if (args.Length == 0)
+            var asm = Assembly.LoadFrom(assemblyPath);
+            var allCases = DiscoverTestCases(asm);
+
+            Console.WriteLine($"Total discovered test cases: {allCases.Count}");
+            Console.WriteLine();
+
+            // 1) последовательный запуск
+            var sw = Stopwatch.StartNew();
+            var sequentialResults = new List<TestRunResult>();
+            foreach (var tc in allCases)
             {
-                Console.WriteLine("Usage: dotnet run --project TestExecutor -- <path-to-tests-dll>");
-                return 1;
+                sequentialResults.Add(await ExecuteTestCaseAsync(tc));
             }
+            sw.Stop();
+            var sequentialMs = sw.ElapsedMilliseconds;
+            PrintResults("Sequential run", sequentialResults);
 
-            var dllPath = args[0];
-            if (!File.Exists(dllPath))
+            // 2) параллельный запуск
+            sw.Restart();
+            var parallelResults = await RunInParallelAsync(allCases, maxDegree);
+            sw.Stop();
+            var parallelMs = sw.ElapsedMilliseconds;
+
+            Console.WriteLine();
+            Console.WriteLine($"Sequential run elapsed: {sequentialMs} ms");
+            Console.WriteLine($"Parallel run (MaxDegreeOfParallelism = {maxDegree}) elapsed: {parallelMs} ms");
+            if (parallelMs > 0)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"File not found: {dllPath}");
-                Console.ResetColor();
-                return 2;
+                var speedup = (double)sequentialMs / parallelMs;
+                Console.WriteLine($"Speedup: {speedup:0.00}x");
             }
+        }
 
-            var asm = Assembly.LoadFrom(dllPath);
-            var types = asm.GetTypes().Where(t => t.GetCustomAttribute(typeof(TestSuiteAttribute)) != null);
+        private static List<TestCase> DiscoverTestCases(Assembly asm)
+        {
+            var result = new List<TestCase>();
 
-            int total = 0, passed = 0, failed = 0;
+            var types = asm
+                .GetTypes()
+                .Where(t => t.GetCustomAttribute<TestSuiteAttribute>() != null)
+                .ToArray();
 
             foreach (var t in types)
             {
-                Console.WriteLine($"\nSuite: {t.FullName}");
-                var before = t.GetMethods().FirstOrDefault(m => m.GetCustomAttribute(typeof(BeforeAttribute)) != null);
-                var after = t.GetMethods().FirstOrDefault(m => m.GetCustomAttribute(typeof(AfterAttribute)) != null);
-                var tests = t.GetMethods().Where(m => m.GetCustomAttribute(typeof(TestAttribute)) != null);
+                var before = t.GetMethods()
+                    .FirstOrDefault(m => m.GetCustomAttribute<BeforeAttribute>() != null);
+
+                var after = t.GetMethods()
+                    .FirstOrDefault(m => m.GetCustomAttribute<AfterAttribute>() != null);
+
+                var tests = t.GetMethods()
+                    .Where(m => m.GetCustomAttribute<TestAttribute>() != null)
+                    .ToArray();
 
                 foreach (var test in tests)
                 {
-                    var dataAttrs = test.GetCustomAttributes().Where(a => a.GetType() == typeof(DataAttribute)).Cast<DataAttribute>().ToArray();
+                    var dataAttrs = test.GetCustomAttributes<DataAttribute>().ToArray();
 
                     if (dataAttrs.Length == 0)
                     {
-                        total++;
-                        var instance = Activator.CreateInstance(t);
-                        try
+                        result.Add(new TestCase
                         {
-                            before?.Invoke(instance, null);
-
-                            var parameters = test.GetParameters();
-                            object[] argsToPass = ConvertArguments(parameters, null);
-                            var result = test.Invoke(instance, argsToPass);
-                            if (result is Task task) await task;
-
-                            Console.ForegroundColor = ConsoleColor.Green;
-                            Console.WriteLine($"[PASS] {test.Name}");
-                            passed++;
-                        }
-                        catch (TargetInvocationException tie) when (tie.InnerException != null)
-                        {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine($"[FAIL] {test.Name} -> {tie.InnerException.GetType().Name}: {tie.InnerException.Message}");
-                            failed++;
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine($"[FAIL] {test.Name} -> {ex.GetType().Name}: {ex.Message}");
-                            failed++;
-                        }
-                        finally
-                        {
-                            Console.ResetColor();
-                            try { after?.Invoke(instance, null); } catch { }
-                        }
+                            SuiteType = t,
+                            TestMethod = test,
+                            BeforeMethod = before,
+                            AfterMethod = after,
+                            RawValues = null
+                        });
                     }
                     else
                     {
                         foreach (var da in dataAttrs)
                         {
-                            var rawValues = da.Values ?? Array.Empty<object>();
-                            total++;
-                            var instance = Activator.CreateInstance(t);
-                            try
+                            result.Add(new TestCase
                             {
-                                before?.Invoke(instance, null);
-
-                                var parameters = test.GetParameters();
-                                object[] argsToPass = ConvertArguments(parameters, rawValues);
-                                var result = test.Invoke(instance, argsToPass);
-                                if (result is Task task) await task;
-
-                                Console.ForegroundColor = ConsoleColor.Green;
-                                Console.WriteLine($"[PASS] {test.Name} (data: {string.Join(", ", rawValues)})");
-                                passed++;
-                            }
-                            catch (TargetInvocationException tie) when (tie.InnerException != null)
-                            {
-                                Console.ForegroundColor = ConsoleColor.Red;
-                                Console.WriteLine($"[FAIL] {test.Name} (data: {string.Join(", ", rawValues)}) -> {tie.InnerException.GetType().Name}: {tie.InnerException.Message}");
-                                failed++;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.ForegroundColor = ConsoleColor.Red;
-                                Console.WriteLine($"[FAIL] {test.Name} (data: {string.Join(", ", rawValues)}) -> {ex.GetType().Name}: {ex.Message}");
-                                failed++;
-                            }
-                            finally
-                            {
-                                Console.ResetColor();
-                                try { after?.Invoke(instance, null); } catch { }
-                            }
+                                SuiteType = t,
+                                TestMethod = test,
+                                BeforeMethod = before,
+                                AfterMethod = after,
+                                RawValues = da.Values ?? Array.Empty<object>()
+                            });
                         }
-                    }
-                }
-            }
-
-            Console.WriteLine("\nSummary:");
-            Console.WriteLine($"Total: {total}, Passed: {passed}, Failed: {failed}");
-            return failed == 0 ? 0 : 3;
-        }
-
-        static object[] ConvertArguments(ParameterInfo[] paramInfos, object[] provided)
-        {
-            if (paramInfos == null || paramInfos.Length == 0) return Array.Empty<object>();
-            var result = new object[paramInfos.Length];
-
-            for (int i = 0; i < paramInfos.Length; i++)
-            {
-                var targetType = paramInfos[i].ParameterType;
-                if (provided == null || i >= provided.Length)
-                {
-                    result[i] = GetDefaultForParameter(targetType);
-                    continue;
-                }
-
-                var val = provided[i];
-                if (val == null)
-                {
-                    result[i] = null;
-                    continue;
-                }
-
-                var valType = val.GetType();
-                if (targetType.IsAssignableFrom(valType))
-                {
-                    result[i] = val;
-                    continue;
-                }
-
-                try
-                {
-                    var nonNullableTarget = Nullable.GetUnderlyingType(targetType) ?? targetType;
-                    if (val is string s)
-                    {
-                        result[i] = Convert.ChangeType(s, nonNullableTarget, CultureInfo.InvariantCulture);
-                    }
-                    else
-                    {
-                        result[i] = Convert.ChangeType(val, nonNullableTarget, CultureInfo.InvariantCulture);
-                    }
-                }
-                catch
-                {
-                    try
-                    {
-                        var nonNullableTarget = Nullable.GetUnderlyingType(targetType) ?? targetType;
-                        var s = val.ToString();
-                        result[i] = Convert.ChangeType(s, nonNullableTarget, CultureInfo.InvariantCulture);
-                    }
-                    catch
-                    {
-                        result[i] = val;
                     }
                 }
             }
@@ -186,10 +132,218 @@ namespace TestExecutor
             return result;
         }
 
-        static object GetDefaultForParameter(Type t)
+        private static async Task<TestRunResult> ExecuteTestCaseAsync(TestCase testCase)
         {
-            if (!t.IsValueType) return null;
-            return Activator.CreateInstance(t);
+            var suiteName = testCase.SuiteType.FullName ?? testCase.SuiteType.Name;
+            var testAttr = testCase.TestMethod.GetCustomAttribute<TestAttribute>()!;
+            var testName = testAttr.Description ?? testCase.TestMethod.Name;
+
+            string dataInfo = string.Empty;
+            var args = Array.Empty<object>();
+            if (testCase.RawValues != null)
+            {
+                args = ConvertArguments(testCase.TestMethod, testCase.RawValues);
+                dataInfo = string.Join(", ", testCase.RawValues.Select(v => v?.ToString() ?? "null"));
+            }
+
+            var result = new TestRunResult
+            {
+                SuiteName = suiteName,
+                TestName = testName,
+                DataInfo = dataInfo
+            };
+
+            object? instance = null;
+            try
+            {
+                instance = Activator.CreateInstance(testCase.SuiteType);
+
+                if (testCase.BeforeMethod != null)
+                    testCase.BeforeMethod.Invoke(instance, null);
+
+                await InvokeWithTimeoutAsync(instance, testCase.TestMethod, args);
+
+                if (testCase.AfterMethod != null)
+                    testCase.AfterMethod.Invoke(instance, null);
+
+                result.Passed = true;
+            }
+            catch (TargetInvocationException ex)
+            {
+                var inner = ex.InnerException ?? ex;
+
+                if (inner is AssertFailedException)
+                {
+                    result.Passed = false;
+                    result.ErrorType = "AssertFailed";
+                    result.ErrorMessage = inner.Message;
+                }
+                else if (inner is TestTimeoutException)
+                {
+                    result.Passed = false;
+                    result.ErrorType = "Timeout";
+                    result.ErrorMessage = inner.Message;
+                }
+                else
+                {
+                    result.Passed = false;
+                    result.ErrorType = "Exception";
+                    result.ErrorMessage = inner.Message;
+                }
+            }
+            catch (TestTimeoutException ex)
+            {
+                result.Passed = false;
+                result.ErrorType = "Timeout";
+                result.ErrorMessage = ex.Message;
+            }
+            catch (Exception ex)
+            {
+                result.Passed = false;
+                result.ErrorType = "Exception";
+                result.ErrorMessage = ex.Message;
+            }
+
+            return result;
+        }
+
+        private static async Task InvokeWithTimeoutAsync(object? instance, MethodInfo method, object[] args)
+        {
+            var timeoutAttr = method.GetCustomAttribute<TimeoutAttribute>();
+            var result = method.Invoke(instance, args);
+
+            // async-тест
+            if (result is Task task)
+            {
+                if (timeoutAttr == null)
+                {
+                    await task;
+                    return;
+                }
+
+                var delayTask = Task.Delay(timeoutAttr.Milliseconds);
+                var completed = await Task.WhenAny(task, delayTask);
+                if (completed != task)
+                    throw new TestTimeoutException(
+                        $"Test exceeded timeout of {timeoutAttr.Milliseconds} ms");
+
+                await task; // дождаться, чтобы исключения дошли
+            }
+            else
+            {
+                // sync-тест
+                if (timeoutAttr == null)
+                    return;
+
+                var syncTask = Task.Run(() => method.Invoke(instance, args));
+                var completed = await Task.WhenAny(syncTask, Task.Delay(timeoutAttr.Milliseconds));
+                if (completed != syncTask)
+                    throw new TestTimeoutException(
+                        $"Test exceeded timeout of {timeoutAttr.Milliseconds} ms");
+
+                await syncTask;
+            }
+        }
+
+        private static async Task<List<TestRunResult>> RunInParallelAsync(
+            List<TestCase> allCases,
+            int maxDegree)
+        {
+            var semaphore = new SemaphoreSlim(maxDegree);
+            var tasks = allCases.Select(async tc =>
+            {
+                await semaphore.WaitAsync();
+                try
+                {
+                    return await ExecuteTestCaseAsync(tc);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToList();
+
+            var results = await Task.WhenAll(tasks);
+            return results.ToList();
+        }
+
+        private static void PrintResults(string title, List<TestRunResult> results)
+        {
+            Console.WriteLine(title);
+            Console.WriteLine();
+
+            if (results.Count == 0)
+            {
+                Console.WriteLine("No tests executed.");
+                return;
+            }
+
+            var suiteGroups = results.GroupBy(r => r.SuiteName);
+
+            foreach (var suite in suiteGroups)
+            {
+                Console.WriteLine($"Suite: {suite.Key}");
+                foreach (var r in suite)
+                {
+                    var prefix = r.Passed ? "[PASS]" : "[FAIL]";
+                    var dataPart = string.IsNullOrEmpty(r.DataInfo)
+                        ? ""
+                        : $" (data: {r.DataInfo})";
+
+                    Console.WriteLine($"{prefix} {r.TestName}{dataPart}");
+
+                    if (!r.Passed && !string.IsNullOrEmpty(r.ErrorType))
+                    {
+                        Console.WriteLine($"       {r.ErrorType}: {r.ErrorMessage}");
+                    }
+                }
+
+                Console.WriteLine();
+            }
+
+            var total = results.Count;
+            var passed = results.Count(r => r.Passed);
+            var failed = total - passed;
+
+            Console.WriteLine("Summary:");
+            Console.WriteLine($"Total: {total}, Passed: {passed}, Failed: {failed}");
+        }
+
+        private static object[] ConvertArguments(MethodInfo method, object[] rawValues)
+        {
+            var parameters = method.GetParameters();
+            if (parameters.Length == 0 || rawValues.Length == 0)
+                return Array.Empty<object>();
+
+            var converted = new object[parameters.Length];
+
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                if (i >= rawValues.Length || rawValues[i] == null)
+                {
+                    converted[i] = rawValues.Length > i ? rawValues[i]! : GetDefault(parameters[i].ParameterType);
+                    continue;
+                }
+
+                var targetType = parameters[i].ParameterType;
+                var value = rawValues[i];
+
+                if (targetType.IsInstanceOfType(value))
+                {
+                    converted[i] = value;
+                }
+                else
+                {
+                    converted[i] = Convert.ChangeType(value, targetType);
+                }
+            }
+
+            return converted;
+        }
+
+        private static object? GetDefault(Type t)
+        {
+            return t.IsValueType ? Activator.CreateInstance(t) : null;
         }
     }
 }

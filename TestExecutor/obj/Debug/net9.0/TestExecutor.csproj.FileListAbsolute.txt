@@ -34,3 +34,4 @@ C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\TestExecutor\obj\Debu
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\TestExecutor\obj\Debug\net9.0\TestExecutor.pdb
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\TestExecutor\obj\Debug\net9.0\TestExecutor.genruntimeconfig.cache
 C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\TestExecutor\obj\Debug\net9.0\ref\TestExecutor.dll
+C:\Users\petrinka\Desktop\лабы\SPP\1\lab_miniframework\TestExecutor\obj\Debug\net9.0\TestExecutor.sourcelink.json
