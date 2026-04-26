@@ -27,6 +27,20 @@ namespace SampleApp.Tests
             _b = null;
         }
 
+        public static IEnumerable<object[]> DepositCases()
+        {
+            yield return new object[] { 50m, 150m };
+            yield return new object[] { 0.01m, 100.01m };
+        }
+
+        [Test("Deposit with iterator")]
+        [TestCaseSource(nameof(DepositCases))]
+        public void Deposit_Works_Iterator(decimal amount, decimal expected)
+        {
+            _a.Deposit(amount);
+            Assert.AreEqual(expected, _a.Balance);
+        }
+
         [Test("Deposit increases balance")]
         [Data(50, 150)]
         [Data(0.01, 100.01)]
@@ -116,6 +130,7 @@ namespace SampleApp.Tests
         }
 
         [Test("Slow test 1")]
+        [TestMeta(category: "Slow", priority: 1, author: "Nikita")]
         public async Task Slow_Test_1()
         {
             await _a.SlowOperationAsync(1000);
@@ -123,6 +138,7 @@ namespace SampleApp.Tests
         }
 
         [Test("Slow test 2")]
+        [TestMeta(category: "Slow", priority: 3, author: "Petya")]
         public async Task Slow_Test_2()
         {
             await _a.SlowOperationAsync(1000);

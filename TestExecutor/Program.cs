@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using MiniTestLib.Attributes;
 using MiniTestLib.Exceptions;
+using System.Threading;
 
 
 namespace TestExecutor
@@ -26,6 +27,28 @@ namespace TestExecutor
             public string? ErrorType { get; set; }
             public string? ErrorMessage { get; set; }
         }
+        public delegate bool TestFilter(MethodInfo testMethod);
+        private static Task<TestRunResult> EnqueueTest(
+    DynamicThreadPool pool,
+    TestCase tc)
+        {
+            var tcs = new TaskCompletionSource<TestRunResult>();
+
+            pool.Enqueue(async () =>
+            {
+                try
+                {
+                    var r = await ExecuteTestCaseAsync(tc);
+                    tcs.SetResult(r);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            });
+
+            return tcs.Task;
+        }
 
         private static async Task Main(string[] args)
         {
@@ -46,6 +69,28 @@ namespace TestExecutor
             var asm = Assembly.LoadFrom(assemblyPath);
             var allCases = DiscoverTestCases(asm);
 
+            // фильтр: только Slow-тесты
+            TestFilter slowTestsFilter = m =>
+            {
+                var meta = m.GetCustomAttribute<TestMetaAttribute>();
+                return meta != null && meta.Category == "Slow";
+            };
+
+            // фильтр: высокий приоритет
+            TestFilter highPriorityFilter = m =>
+            {
+                var meta = m.GetCustomAttribute<TestMetaAttribute>();
+                return meta != null && meta.Priority >= 2;
+            };
+
+            var slowCases = DiscoverTestCases(asm, slowTestsFilter);
+            var highPriorityCases = DiscoverTestCases(asm, highPriorityFilter);
+
+            Console.WriteLine($"Total discovered test cases: {allCases.Count}");
+            Console.WriteLine($"Slow cases: {slowCases.Count}");
+            Console.WriteLine($"High priority cases: {highPriorityCases.Count}");
+            Console.WriteLine();
+
             Console.WriteLine($"Total discovered test cases: {allCases.Count}");
             Console.WriteLine();
 
@@ -60,23 +105,58 @@ namespace TestExecutor
             var sequentialMs = sw.ElapsedMilliseconds;
             PrintResults("Sequential run", sequentialResults);
 
-            // 2) параллельный запуск
-            sw.Restart();
-            var parallelResults = await RunInParallelAsync(allCases, maxDegree);
-            sw.Stop();
-            var parallelMs = sw.ElapsedMilliseconds;
+            // 2) параллельный запуск через собственный пул потоков + сценарии нагрузки
+
+            var config = new ThreadPoolConfig
+            {
+                MinThreads = 2,
+                MaxThreads = maxDegree, // можно привязать к аргументу
+                IdleWorkerLifetime = TimeSpan.FromSeconds(5),
+                MaxQueueWait = TimeSpan.FromMilliseconds(500)
+            };
+
+            var allRuns = new List<TestRunResult>();
 
             Console.WriteLine();
-            Console.WriteLine($"Sequential run elapsed: {sequentialMs} ms");
-            Console.WriteLine($"Parallel run (MaxDegreeOfParallelism = {maxDegree}) elapsed: {parallelMs} ms");
-            if (parallelMs > 0)
+            Console.WriteLine("=== Dynamic thread pool load simulation ===");
+
+            // 2.1. одиночные подачи
+            Console.WriteLine("Phase 1: single submissions");
+            foreach (var tc in allCases)
             {
-                var speedup = (double)sequentialMs / parallelMs;
-                Console.WriteLine($"Speedup: {speedup:0.00}x");
+                var results = await RunWithDynamicPoolAsync(
+                    new List<TestCase> { tc }, config);
+                allRuns.AddRange(results);
+                await Task.Delay(50);
             }
+
+            // 2.2. период пиковой нагрузки – несколько полных пачек
+            Console.WriteLine("Phase 2: peak load (full batches)");
+            for (int i = 0; i < 5; i++)
+            {
+                var results = await RunWithDynamicPoolAsync(allCases, config);
+                allRuns.AddRange(results);
+            }
+
+            // 2.3. интервал простоя
+            Console.WriteLine("Phase 3: idle interval");
+            await Task.Delay(5000);
+
+            // 2.4. несколько маленьких пачек
+            Console.WriteLine("Phase 4: small batches");
+            for (int i = 0; i < 10; i++)
+            {
+                var subset = allCases.Take(3).ToList();
+                var results = await RunWithDynamicPoolAsync(subset, config);
+                allRuns.AddRange(results);
+                await Task.Delay(200);
+            }
+
+            Console.WriteLine();
+            PrintResults("Dynamic thread pool aggregated results", allRuns);
         }
 
-        private static List<TestCase> DiscoverTestCases(Assembly asm)
+        private static List<TestCase> DiscoverTestCases(Assembly asm, TestFilter? filter = null)
         {
             var result = new List<TestCase>();
 
@@ -93,15 +173,21 @@ namespace TestExecutor
                 var after = t.GetMethods()
                     .FirstOrDefault(m => m.GetCustomAttribute<AfterAttribute>() != null);
 
-                var tests = t.GetMethods()
-                    .Where(m => m.GetCustomAttribute<TestAttribute>() != null)
-                    .ToArray();
+                var testsQuery = t.GetMethods()
+                    .Where(m => m.GetCustomAttribute<TestAttribute>() != null);
+
+                if (filter != null)
+                    testsQuery = testsQuery.Where(m => filter(m));
+
+                var tests = testsQuery.ToArray();
 
                 foreach (var test in tests)
                 {
                     var dataAttrs = test.GetCustomAttributes<DataAttribute>().ToArray();
+                    var sourceAttrs = test.GetCustomAttributes<TestCaseSourceAttribute>().ToArray();
 
-                    if (dataAttrs.Length == 0)
+                    // Если нет ни [Data], ни [TestCaseSource] — один обычный тест-кейс
+                    if (dataAttrs.Length == 0 && sourceAttrs.Length == 0)
                     {
                         result.Add(new TestCase
                         {
@@ -111,10 +197,52 @@ namespace TestExecutor
                             AfterMethod = after,
                             RawValues = null
                         });
+
+                        continue;
                     }
-                    else
+
+                    // Кейсы из [Data(...)]
+                    foreach (var da in dataAttrs)
                     {
-                        foreach (var da in dataAttrs)
+                        result.Add(new TestCase
+                        {
+                            SuiteType = t,
+                            TestMethod = test,
+                            BeforeMethod = before,
+                            AfterMethod = after,
+                            RawValues = da.Values ?? Array.Empty<object>()
+                        });
+                    }
+
+                    // Кейсы из [TestCaseSource(...)]
+                    foreach (var sa in sourceAttrs)
+                    {
+                        var sourceMethod = t.GetMethod(
+                            sa.MethodName,
+                            BindingFlags.Public |
+                            BindingFlags.NonPublic |
+                            BindingFlags.Static |
+                            BindingFlags.Instance);
+
+                        if (sourceMethod == null)
+                        {
+                            throw new InvalidOperationException(
+                                $"Test case source method '{sa.MethodName}' not found in type '{t.FullName}'.");
+                        }
+
+                        object? sourceInstance = null;
+                        if (!sourceMethod.IsStatic)
+                            sourceInstance = Activator.CreateInstance(t);
+
+                        var sourceResult = sourceMethod.Invoke(sourceInstance, null);
+
+                        if (sourceResult is not IEnumerable<object[]> enumerable)
+                        {
+                            throw new InvalidOperationException(
+                                $"Method '{sa.MethodName}' in type '{t.FullName}' must return IEnumerable<object[]>.");
+                        }
+
+                        foreach (var values in enumerable)
                         {
                             result.Add(new TestCase
                             {
@@ -122,7 +250,7 @@ namespace TestExecutor
                                 TestMethod = test,
                                 BeforeMethod = before,
                                 AfterMethod = after,
-                                RawValues = da.Values ?? Array.Empty<object>()
+                                RawValues = values
                             });
                         }
                     }
@@ -262,6 +390,28 @@ namespace TestExecutor
                     semaphore.Release();
                 }
             }).ToList();
+
+            var results = await Task.WhenAll(tasks);
+            return results.ToList();
+        }
+        private static async Task<List<TestRunResult>> RunWithDynamicPoolAsync(
+    List<TestCase> allCases,
+    ThreadPoolConfig config)
+        {
+            using var pool = new DynamicThreadPool(config);
+
+            pool.WorkerStateChanged += (s, e) =>
+            {
+                Console.WriteLine($"[POOL] Worker {e.WorkerId} {e.State} " +
+                                  $"{(e.Exception != null ? e.Exception.Message : "")}");
+            };
+
+            pool.QueueChanged += (s, e) =>
+            {
+                Console.WriteLine($"[POOL] Queue length = {e.QueueLength}");
+            };
+
+            var tasks = allCases.Select(tc => EnqueueTest(pool, tc)).ToList();
 
             var results = await Task.WhenAll(tasks);
             return results.ToList();
