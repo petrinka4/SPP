@@ -110,7 +110,7 @@ namespace TestExecutor
             var config = new ThreadPoolConfig
             {
                 MinThreads = 2,
-                MaxThreads = maxDegree, // можно привязать к аргументу
+                MaxThreads = maxDegree, 
                 IdleWorkerLifetime = TimeSpan.FromSeconds(5),
                 MaxQueueWait = TimeSpan.FromMilliseconds(500)
             };
@@ -186,7 +186,7 @@ namespace TestExecutor
                     var dataAttrs = test.GetCustomAttributes<DataAttribute>().ToArray();
                     var sourceAttrs = test.GetCustomAttributes<TestCaseSourceAttribute>().ToArray();
 
-                    // Если нет ни [Data], ни [TestCaseSource] — один обычный тест-кейс
+                    // Если нет ни [Data], ни [TestCaseSource] один обычный тест-кейс
                     if (dataAttrs.Length == 0 && sourceAttrs.Length == 0)
                     {
                         result.Add(new TestCase
